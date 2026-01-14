@@ -1,22 +1,27 @@
-name: Reddit Monitor
+name: SlaveLabour Monitor
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # This tells it to run every 5 minutes
-  workflow_dispatch:      # This lets you run it manually to test
+    # We ask GitHub for every 1 minute. 
+    # (Note: On free accounts, they usually slow this to ~5 mins, but this requests the max speed)
+    - cron: '* * * * *'  
+  workflow_dispatch:
 
 jobs:
-  run-bot:
+  check-slavelabour:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-      - name: Install Internet Tool
-        run: pip install requests
-      - name: Run Script
+
+      - name: Install Tools
+        run: pip install requests feedparser
+
+      - name: Run Monitor
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python main.py
