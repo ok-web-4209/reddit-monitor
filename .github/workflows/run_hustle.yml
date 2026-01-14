@@ -1,0 +1,22 @@
+name: Hustle Monitor
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-hustle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Install Requests
+        run: pip install requests
+      - name: Run Hustle Script
+        env:
+          HUSTLEGPT_WEBHOOK_URL: ${{ secrets.HUSTLEGPT_WEBHOOK_URL }}
+        run: python hustle.py
