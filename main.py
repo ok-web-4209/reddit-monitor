@@ -1,62 +1,70 @@
+import feedparser
 import requests
 import os
 import time
 from datetime import datetime, timezone
 
-# --- SETTINGS ---
-SUBREDDIT = "slavelabour" 
-# Leave KEYWORDS empty [] if you want to be notified for EVERY new post
-KEYWORDS = ["hiring", "task", "paypal", "urgent", "easy", "usd"] 
+# --- CONFIGURATION ---
+RSS_URL = "https://www.reddit.com/r/slavelabour/new/.rss"
+WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
 
-def check_reddit():
-    print(f"Checking r/{SUBREDDIT}...")
+# Time Window: How far back to check (in seconds).
+# Since GitHub runs roughly every 5 mins, we check the last 10 mins (600s) 
+# to ensure we never miss a post, even if GitHub is late.
+# (You might see a duplicate occasionally, but it's safer than missing a job).
+CHECK_WINDOW = 600 
+
+def check_feed():
+    print("--- CHECKING SLAVELABOUR (ALL POSTS) ---")
     
-    # We use a fake browser ID so Reddit thinks we are a human
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-    url = f"https://www.reddit.com/r/{SUBREDDIT}/new.json?limit=10"
+    # 1. Parse the Feed
+    feed = feedparser.parse(RSS_URL, agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
     
-    try:
-        # 1. Get the data from Reddit
-        response = requests.get(url, headers=headers)
-        if response.status_code != 200:
-            print(f"Error: Reddit blocked us or is down. Code: {response.status_code}")
-            return
+    if not feed.entries:
+        print("❌ Error: Feed is empty or blocked.")
+        return
 
-        data = response.json()
-        posts = data['data']['children']
+    current_time = datetime.now(timezone.utc).timestamp()
+    
+    # 2. Loop through posts
+    # We reverse the list to send oldest -> newest so they appear in order in Discord
+    for entry in reversed(feed.entries):
         
-        # 2. Figure out the time 10 minutes ago
-        # We check the last 10 minutes to make sure we don't miss anything
-        current_time = datetime.now(timezone.utc).timestamp()
-        ten_mins_ago = current_time - (10 * 60) 
-
-        # 3. Look through the posts
-        webhook_url = os.environ["DISCORD_WEBHOOK_URL"]
+        # Convert RSS time to compatible format
+        post_time_struct = entry.published_parsed
+        post_timestamp = time.mktime(post_time_struct)
         
-        for post_obj in posts:
-            post = post_obj['data']
-            post_time = post['created_utc']
+        # 3. Check if it's new
+        if (current_time - post_timestamp) < CHECK_WINDOW:
+            print(f"MATCH: {entry.title}")
             
-            # If the post is newer than 10 minutes ago...
-            if post_time > ten_mins_ago:
-                
-                title = post['title'].lower()
-                body = post.get('selftext', '').lower()
-                
-                # Check if it matches keywords (OR if keywords list is empty)
-                if not KEYWORDS or any(word in title for word in KEYWORDS) or any(word in body for word in KEYWORDS):
-                    
-                    print(f"Found match: {post['title']}")
-                    
-                    # Send to Discord
-                    message = {
-                        "content": f"🚨 **New Job:** {post['title']}\n🔗 https://reddit.com{post['permalink']}"
-                    }
-                    requests.post(webhook_url, json=message)
-                    time.sleep(2) # Wait 2 seconds so Discord doesn't get mad
-
-    except Exception as e:
-        print(f"Something went wrong: {e}")
+            # 4. Create the "Open App" Embed
+            # We add a clean title and a clear "Open in App" link.
+            msg = {
+                "embeds": [{
+                    "title": entry.title,
+                    "url": entry.link,  # Clicking title opens browser
+                    "description": "Click the link below to open in Reddit App:",
+                    "color": 16729344,  # Reddit Orange
+                    "fields": [
+                        {
+                            "name": "📱 Mobile Link",
+                            "value": f"[**Tap to Open in App**]({entry.link})",
+                            "inline": True
+                        }
+                    ],
+                    "footer": {
+                        "text": "r/slavelabour • New Post"
+                    },
+                    "timestamp": datetime.fromtimestamp(post_timestamp).isoformat()
+                }]
+            }
+            
+            try:
+                requests.post(WEBHOOK_URL, json=msg)
+                time.sleep(2) # Slight pause to ensure order
+            except Exception as e:
+                print(f"Error sending to Discord: {e}")
 
 if __name__ == "__main__":
-    check_reddit()
+    check_feed()
