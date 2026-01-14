@@ -1,45 +1,61 @@
 import requests
 import os
-import time
-from datetime import datetime, timezone
+import json
 
 # --- CONFIGURATION ---
 SUBREDDIT = "HustleGPT"
-KEYWORDS = [] # Leave empty to get EVERY post, or add keywords like ["ai", "money"]
+# Get the secret. If this fails, the workflow logs will tell us.
+WEBHOOK_URL = os.environ.get("HUSTLEGPT_WEBHOOK_URL")
 
-def check_reddit():
-    print(f"Checking r/{SUBREDDIT}...")
+def debug_bot():
+    print("--- STARTING DEBUG RUN ---")
+
+    # 1. VERIFY DISCORD CONNECTION
+    if not WEBHOOK_URL:
+        print("❌ CRITICAL ERROR: The Secret 'HUSTLEGPT_WEBHOOK_URL' is missing or empty!")
+        return
+
+    print("1. Sending Test Message to Discord...")
+    test_payload = {"content": "✅ **TEST:** The Bot is connected and running! (If you see this, the Webhook is correct)."}
+    try:
+        test_resp = requests.post(WEBHOOK_URL, json=test_payload)
+        if test_resp.status_code in [200, 204]:
+            print("   ✅ Discord Test Sent Successfully.")
+        else:
+            print(f"   ❌ Discord Rejected the message. Code: {test_resp.status_code}")
+            print(f"   Response: {test_resp.text}")
+    except Exception as e:
+        print(f"   ❌ Failed to connect to Discord: {e}")
+
+    # 2. VERIFY REDDIT CONNECTION
+    print(f"\n2. Checking r/{SUBREDDIT} (No filters)...")
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-    url = f"https://www.reddit.com/r/{SUBREDDIT}/new.json?limit=10"
-    
+    url = f"https://www.reddit.com/r/{SUBREDDIT}/new.json?limit=5"
+
     try:
         response = requests.get(url, headers=headers)
         if response.status_code != 200:
-            print(f"Error: {response.status_code}")
+            print(f"   ❌ Reddit Blocked the request. Status Code: {response.status_code}")
             return
-
-        posts = response.json()['data']['children']
-        current_time = datetime.now(timezone.utc).timestamp()
-        ten_mins_ago = current_time - (10 * 60) 
         
-        # USE THE NEW SECRET HERE
-        webhook_url = os.environ["HUSTLEGPT_WEBHOOK_URL"]
+        data = response.json()
+        posts = data['data']['children']
+        print(f"   ✅ Successfully fetched {len(posts)} posts from Reddit.")
 
-        for post_obj in posts:
-            post = post_obj['data']
-            if post['created_utc'] > ten_mins_ago:
-                
-                title = post['title'].lower()
-                body = post.get('selftext', '').lower()
-                
-                if not KEYWORDS or any(k in title for k in KEYWORDS) or any(k in body for k in KEYWORDS):
-                    print(f"Found: {post['title']}")
-                    msg = {"content": f"🚀 **HustleGPT:** {post['title']}\n🔗 https://reddit.com{post['permalink']}"}
-                    requests.post(webhook_url, json=msg)
-                    time.sleep(2)
+        # Send the newest post to Discord just to prove it can scrape
+        if posts:
+            top_post = posts[0]['data']
+            print(f"   Attempting to send post: {top_post['title']}")
+            msg = {
+                "content": f"🕵️ **Debug Found Post:** {top_post['title']}\n🔗 https://reddit.com{top_post['permalink']}"
+            }
+            requests.post(WEBHOOK_URL, json=msg)
+            print("   ✅ Sent top post to Discord.")
+        else:
+            print("   ⚠️ Reddit returned 0 posts (Subreddit might be empty?)")
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"   ❌ Script crashed: {e}")
 
 if __name__ == "__main__":
-    check_reddit()
+    debug_bot()
