@@ -4,7 +4,7 @@ import os
 import time
 
 # --- CONFIGURATION ---
-RSS_URL = "https://www.reddit.com/r/HustleGPT/new/.rss"
+RSS_URL = "https://www.reddit.com/r/Slavelabour/new/.rss"
 WEBHOOK_URL = os.environ["HUSTLEGPT_WEBHOOK_URL"]
 
 def check_rss_feed():
